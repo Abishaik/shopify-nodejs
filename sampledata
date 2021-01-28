@@ -1,0 +1,66 @@
+
+////////////////////////////////////////////////////
+product
+
+{
+    "title": "Breeze",
+    "body_html": "<strong></strong>",
+    "vendor": "Abishaik S",
+    "product_type": "Natural Product",
+    "tags": [
+      "peace & Noble",
+      "peace",
+      "Sea"
+    ]
+}
+
+update product
+?pid=5919894634666
+
+{
+    "id": 5919894634666,
+    "title": "Updated Breeze"
+}
+
+
+
+
+///////////////////////////////////////////////////////
+order
+create order
+{
+"variant_id": 37005589807274,
+"quantity": 345
+}
+
+update order
+?oid=2882394685610
+{
+    "id": 2882394685610,
+    "tags": "Updated Breeze Tags"
+}
+
+
+//////////////////////////////////////////////////////
+
+update a order
+{
+  "order": {
+    "id": 2882394685610,
+    "tags": "External, Inbound, Outbound"
+  }
+}
+////////////////////////////////////////////////////
+
+product id =5919894634666
+5919894634666
+variant_id =37005815251114
+
+
+//////////////////////////////////////////////////
+update_inventory
+?iid
+{
+    "iid": 39098604519594,
+    "sku": 999
+}

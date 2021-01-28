@@ -1,0 +1,485 @@
+const dotenv = require('dotenv').config();
+const express = require('express');
+const app = express();
+const crypto = require('crypto');
+const cookie = require('cookie');
+const nonce=require('nonce')();
+const querystring=require('querystring')
+const request=require('request-promise');
+const { error } = require('console');
+
+
+var MongoClient = require('mongodb').MongoClient;
+var mongoUrl = "mongodb://localhost:27017/";
+
+
+const apiKey=process.env.SHOPIFY_API_KEY;
+const apiSecret=process.env.SHOPIFY_API_SECRET;
+const scope='write_products';
+const forwardingAddress="https://6bc4d3ebc47d.ngrok.io";
+
+//console.log(apiSecret,apiKey,scopes,forwardingAddress)
+    
+app.get('/shopify',(req,res)=>{
+    const shop=req.query.shop;
+    if(shop){
+        const state=nonce();
+        const redirectUri=forwardingAddress+'/shopify/callback';
+        const installUrl='https://'+shop+'/admin/oauth/authorize?client_id='+apiKey+
+        '&scope='+scope+
+        '&state='+state+
+        '&redirect_uri='+redirectUri;
+        res.cookie('state',state);
+        console.log(installUrl)
+        res.redirect(installUrl);
+    }else{
+        return res.status(400).send("Not done-->")
+    }
+});
+
+
+app.get('/shopify/callback',(req,res) =>{
+    const {shop, hmac, code, state} =req.query;
+    const stateCookie =cookie.parse(req.headers.cookie).state;
+
+    if(state !== stateCookie){
+        return res.status(403).send('Request object is not verified');
+
+    }
+    if(shop && hmac && code){
+        const map=Object.assign({},req.query);
+        delete map['hmac'];
+        const message=querystring.stringify(map);
+        const generatedHash=crypto
+            .createHmac('sha256',apiSecret)
+            .update(message)
+            .digest('hex');
+        if(generatedHash!==hmac){
+            return res.status(400).send('HMAC validation fail');
+        }
+        const accessTokenRequestUrl="https://"+shop+"/admin/oauth/access_token";
+        const accessTokenPayload={
+            client_id:apiKey, 
+            client_secret:apiSecret,
+            code:code
+        }
+        console.log(accessTokenRequestUrl)
+        request.post(accessTokenRequestUrl,{json:accessTokenPayload})
+        .then((accessTokenResponse) =>{
+            const accessToken = accessTokenResponse.access_token;
+            console.log(accessToken);
+
+            MongoClient.connect(mongoUrl, function(err, db) {
+                if (err) throw err;
+                var dbo = db.db("tokens");
+                var myobj = { token : accessToken ,shop :shop};
+                dbo.collection("token").insertOne(myobj, function(err, res) {
+                  if (err) throw err;
+                  console.log("1 token added to db");
+                  
+                  db.close();
+
+                });
+              });
+            res.send("Access Token Added to DB")  
+        })
+        .catch((error) =>{
+            res.status(error.statusCode).send(error.error.error_description);
+        });
+
+    }
+    else{
+        res.status(400).send('required parametre missing');
+    }
+});    
+
+app.get('/getAccessAndReadProducts',(req,res) =>{
+    MongoClient.connect(mongoUrl, function(err, db) {
+        if (err) throw err;
+        var dbo = db.db("tokens");
+        dbo.collection('token').findOne({}, function(err, result) {
+          if (err) throw err;
+          const token =result['token']
+          const shop = result['shop']
+          console.log('access token is : '+token);
+          console.log('shop name is : '+shop);
+
+          const apiRequestUrl="https://"+shop+'/admin/products.json';
+          const apiRequestHeader ={
+              'X-Shopify-Access-Token': token
+          };
+          request.get(apiRequestUrl,{headers: apiRequestHeader})
+          .then((apiResponse) =>{
+            res.send(apiResponse);
+          })
+          .catch((error) =>{
+            res.send(error.message)
+          })
+          console.log("Access Granted !");
+          db.close();
+        });
+    });
+    
+});
+
+
+   
+
+
+app.listen(3000,() =>{
+    console.log("This app listening port3000")
+})
+////////////////////////////////////////
+
+
+
+router.post('/app/create-product', function (req, res) {
+
+    //this is what we need to post
+    // POST /admin/products.json
+    // {
+    //   "product": {
+    //     "title": "Burton Custom Freestyle 151",
+    //     "body_html": "<strong>Good snowboard!</strong>",
+    //     "vendor": "Burton",
+    //     "product_type": "Snowboard",
+    //     "tags": "Barnes & Noble, John's Fav, &quot;Big Air&quot;"
+    //   }
+    // }
+
+
+
+    let new_product = {
+        product: {
+            title: req.body.title,
+            body_html: req.body.body_html,
+            vendor: req.body.vendor,
+            product_type: req.body.product_type,
+            tags: req.body.tags
+        }
+    };
+    console.log(req.query.shop);
+    let url = 'https://' + req.query.shop + '/admin/products.json';
+
+    let options = {
+        method: 'POST',
+        uri: url,
+        json: true,
+        resolveWithFullResponse: true,//added this to view status code
+        headers: {
+            'X-Shopify-Access-Token': process.env.appStoreTokenTest,
+            'content-type': 'application/json'
+        },
+        body: new_product//pass new product object - NEW - request-promise problably updated
+    };
+
+    request.post(options)
+        .then(function (response) {
+            console.log(response.body);
+            if (response.statusCode == 201) {
+                res.json(true);
+            } else {
+                res.json(false);
+            }
+
+        })
+        .catch(function (err) {
+            console.log(err);
+            res.json(false);
+        });
+
+
+});
+///////////////////////////14.49
+
+const dotenv = require('dotenv').config();
+const express = require('express');
+const app = express();
+const crypto = require('crypto');
+const cookie = require('cookie');
+const nonce=require('nonce')();
+const querystring=require('querystring')
+const request=require('request-promise');
+const bodyParser =require('body-parser')
+const { error } = require('console');
+
+app.use(express.json())
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+
+var MongoClient = require('mongodb').MongoClient;
+var mongoUrl = "mongodb://localhost:27017/";
+
+
+const apiKey=process.env.SHOPIFY_API_KEY;
+const apiSecret=process.env.SHOPIFY_API_SECRET;
+const scope='write_products';
+const forwardingAddress="https://8cd2ac1a6aec.ngrok.io";
+
+//console.log(apiSecret,apiKey,scopes,forwardingAddress)
+    
+app.get('/shopify',(req,res)=>{
+    const shop=req.query.shop;
+    if(shop){
+        const state=nonce();
+        const redirectUri=forwardingAddress+'/shopify/callback';
+        const installUrl='https://'+shop+'/admin/oauth/authorize?client_id='+apiKey+
+        '&scope='+scope+
+        '&state='+state+
+        '&redirect_uri='+redirectUri;
+        res.cookie('state',state);
+        console.log(installUrl)
+        res.redirect(installUrl);
+    }else{
+        return res.status(400).send("Not done-->")
+    }
+});
+
+
+app.get('/shopify/callback',(req,res) =>{
+    const {shop, hmac, code, state} =req.query;
+    const stateCookie =cookie.parse(req.headers.cookie).state;
+
+    if(state !== stateCookie){
+        return res.status(403).send('Request object is not verified');
+
+    }
+    if(shop && hmac && code){
+        const map=Object.assign({},req.query);
+        delete map['hmac'];
+        const message=querystring.stringify(map);
+        const generatedHash=crypto
+            .createHmac('sha256',apiSecret)
+            .update(message)
+            .digest('hex');
+        if(generatedHash!==hmac){
+            return res.status(400).send('HMAC validation fail');
+        }
+        const accessTokenRequestUrl="https://"+shop+"/admin/oauth/access_token";
+        const accessTokenPayload={
+            client_id:apiKey, 
+            client_secret:apiSecret,
+            code:code
+        }
+        console.log(accessTokenRequestUrl)
+        request.post(accessTokenRequestUrl,{json:accessTokenPayload})
+        .then((accessTokenResponse) =>{
+            const accessToken = accessTokenResponse.access_token;
+            console.log(accessToken);
+
+            MongoClient.connect(mongoUrl, function(err, db) {
+                if (err) throw err;
+                var dbo = db.db("tokens");
+                var myobj = { token : accessToken ,shop :shop};
+                dbo.collection("token").insertOne(myobj, function(err, res) {
+                  if (err) throw err;
+                  console.log("1 token added to db");
+                  
+                  db.close();
+
+                });
+              });
+            res.send("Access Token Added to DB")  
+        })
+        .catch((error) =>{
+            res.status(error.statusCode).send(error.error.error_description);
+        });
+
+    }
+    else{
+        res.status(400).send('required parametre missing');
+    }
+});    
+
+app.get('/get_access_and_read_products',(req,res) =>{
+    
+    MongoClient.connect(mongoUrl, function(err, db) {
+        if (err) throw err;
+        var dbo = db.db("tokens");
+        dbo.collection('token').findOne({}, function(err, result) {
+          if (err) throw err;
+          const token =result['token']
+          const shop = result['shop']
+          console.log('access token is : '+token);
+          console.log('shop name is : '+shop);
+
+          const apiRequestUrl="https://"+shop+'/admin/products.json';
+          const apiRequestHeader ={
+              'X-Shopify-Access-Token': token
+          };
+          request.get(apiRequestUrl,{headers: apiRequestHeader})
+          .then((apiResponse) =>{
+            res.send(apiResponse);
+          })
+          .catch((error) =>{
+            res.send(error.message)
+          })
+          console.log("Access Granted !");
+          db.close();
+        });
+    });
+    
+});
+
+app.post('/get_access_and_add_products',function(req,res) {
+    const new_product={
+        "product": {
+          "title": req.body.title,
+          "body_html": req.body.body_html,
+          "vendor": req.body.vendor,
+          "product_type": req.body.product_type,
+          "tags": req.body.tags
+        }
+      }
+    MongoClient.connect(mongoUrl, function(err,db){
+        if (err) throw err;
+        var dbo = db.db("tokens");
+        dbo.collection('token').findOne({},function(err,result){
+            if (err) throw err;
+            const token =result['token']
+            const shop = result['shop']
+            console.log('access token is : '+token);
+            console.log('shop name is : '+shop);
+
+            const apiRequestUrl="https://"+shop+'/admin/products.json';
+            options ={
+                method:'POST',
+                uri:apiRequestUrl,
+                json:true,
+                headers:{
+                    'X-Shopify-Access-Token':token,
+                    'Content-Type': 'application/json'
+
+                },
+                body: new_product
+            };
+            var dbi =db.db('Products')
+            dbi.collection('testProducts').insertOne(new_product);
+            db.close();
+
+            request.post(options)
+                .then(function(response){
+                    
+                    if (response.statusCode ==201){
+                        res.json(true);
+                    } else {
+                        res.json('Added to store and MongoDB');
+                    }
+                    return(response.body)
+                })
+                .catch(function(err){
+                    res.json(err);
+                });
+        db.close();       
+        })
+    })
+
+});
+
+app.post('/get_access_and_delete_product',(req,res) =>{
+    const id =req.query.id
+    MongoClient.connect(mongoUrl, function(err,db){
+        if (err) throw err;
+        var dbo = db.db("tokens");
+        dbo.collection('token').findOne({},function(err,result){
+            if (err) throw err;
+            const token =result['token']
+            const shop = result['shop']
+            console.log('access token is : '+token);
+            console.log('shop name is : '+shop);
+            const id =req.query.id
+            const apiRequestUrl="https://"+shop+'/admin/products/'+id+'/.json';
+            options ={
+                method:'DELETE',
+                uri:apiRequestUrl,
+                headers:{
+                    'X-Shopify-Access-Token':token,
+                    'Content-Type': 'application/json'
+
+                },
+                body:id
+            };
+
+            request.delete(options)
+                .then(function(response){
+                    
+                    if (response.statusCode ==200){
+                        res.json(true);
+                    } else {
+                        res.json(false);
+                    }
+                })
+                .catch(function(err){
+                    res.json(err);
+                });
+        db.close();       
+        })
+    })
+
+
+})
+
+
+app.listen(3000,() =>{
+    console.log("This app listening port3000")
+})
+//####################22:04-oct 12//////////////////
+
+
+app.post('/get_access_and_add_products',function(req,res) {
+    const new_product={
+        "product": {
+          "title": req.body.title,
+          "body_html": req.body.body_html,
+          "vendor": req.body.vendor,
+          "product_type": req.body.product_type,
+          "tags": req.body.tags
+        }
+      }
+    MongoClient.connect(mongoUrl, function(err,db){
+        if (err) throw err;
+        var dbo = db.db("tokens");
+        dbo.collection('token').findOne({},function(err,result){
+            if (err) throw err;
+            const token =result['token']
+            const shop = result['shop']
+            console.log('access token is : '+token);
+            console.log('shop name is : '+shop);
+
+            const apiRequestUrl="https://"+shop+'/admin/products.json';
+            options ={
+                method:'POST',
+                uri:apiRequestUrl,
+                json:true,
+                headers:{
+                    'X-Shopify-Access-Token':token,
+                    'Content-Type': 'application/json'
+
+                },
+                body: new_product
+            };
+            var dbi =db.db('Products')
+            dbi.collection('testProducts').insertOne(new_product);
+            db.close();
+
+            request.post(options)
+                .then(function(response){
+                    
+                    if (response.statusCode ==201){
+                        res.json(true);
+                    } else {
+                        res.json('Added to store and MongoDB');
+                    }
+                    return(response.body)
+                })
+                .catch(function(err){
+                    res.json(err);
+                });
+        db.close();       
+        })
+    })
+
+});
+
+
